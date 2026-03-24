@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <cstdint>
 
+#include <libsdb/registers.hpp>
+
 namespace sdb {
     /**
      * States for the process, we keep track of them
@@ -84,6 +86,20 @@ namespace sdb {
             return state_;
         }
 
+        registers& get_registers() {
+            return *registers_;
+        }
+
+        [[nodiscard]] const registers& get_registers() const {
+            return *registers_;
+        }
+
+        void write_user_area(std::size_t offset, std::uint64_t data) const;
+
+        void write_fprs(const user_fpregs_struct& fprs);
+
+        void write_gprs(const user_regs_struct& fprs);
+
     private:
         /**
          * Private constructor for Process, used internally
@@ -92,12 +108,18 @@ namespace sdb {
          * @param terminate_on_end way of terminating the process.
          */
         process(pid_t pid, bool terminate_on_end, bool is_attached) :
-            pid_(pid), terminate_on_end_(terminate_on_end), is_attached_(is_attached) {}
+            pid_(pid), terminate_on_end_(terminate_on_end), is_attached_(is_attached),
+            registers_(new registers(*this))
+        {}
+
+        void read_all_registers();
 
         pid_t pid_ = 0;
         bool terminate_on_end_ = true;
         process_state state_ = process_state::stopped;
         bool is_attached_ = true;
+        std::unique_ptr<registers> registers_;
+
     };
 }
 

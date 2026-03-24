@@ -1,7 +1,8 @@
 # create the library where to add sources
 add_library(libsdb
         process.cpp
-        pipe.cpp)
+        pipe.cpp
+        registers.cpp)
 # assign an ALIAS with a namespace
 add_library(sdb::libsdb ALIAS libsdb)
 

@@ -117,6 +117,14 @@ sdb::stop_reason sdb::process::wait_on_signal() {
     }
     stop_reason reason(wait_status);
     state_ = reason.reason;
+
+    // now check that we just stopped (no other signal),
+    // and read the registers
+    if (is_attached_ and state_ == process_state::stopped) {
+        read_all_registers();
+    }
+
+
     return reason;
 }
 
@@ -141,5 +149,49 @@ sdb::process::~process() {
             kill(pid_, SIGKILL);
             waitpid(pid_, &status, 0);
         }
+    }
+}
+
+void sdb::process::read_all_registers() {
+    // Retrieve the general purpose registers, use a ptrace call
+    if (ptrace(PTRACE_GETREGS, pid_, nullptr, &get_registers().data_.regs) < 0) {
+        error::send_errno("Could not get GPR registers");
+    }
+    // Retrieve the floating-point registers
+    if (ptrace(PTRACE_GETFPREGS, pid_, nullptr, &get_registers().data_.i387) < 0) {
+        error::send_errno("Could not get FPR registers");
+    }
+    // Getting the debug registers, we need to retrieve them reading memory
+    for (int i = 0; i < 8; ++i) {
+        // get id from dr0, dr1, ... using dr0 as base
+        auto id= static_cast<int>(register_id::dr0) + i;
+        // retrieve the info structure
+        const auto & info = register_info_by_id(static_cast<register_id>(id));
+
+        // we read the 64 bit value from the offset of the register
+        errno = 0;
+        std::int64_t data = ptrace(PTRACE_PEEKUSER, pid_, info.offset, nullptr);
+        if (errno != 0) error::send_errno("Could not read debug register");
+
+        // assign it to the registers
+        get_registers().data_.u_debugreg[i] = data;
+    }
+}
+
+void sdb::process::write_user_area(std::size_t offset, std::uint64_t data) const {
+    if (ptrace(PTRACE_POKEUSER, pid_, offset, data) < 0) {
+        error::send_errno("Could not write to user area");
+    }
+}
+
+void sdb::process::write_fprs(const user_fpregs_struct& fprs) {
+    if (ptrace(PTRACE_SETFPREGS, pid_, nullptr, &fprs) < 0) {
+        error::send_errno("Could not set floating-point registers");
+    }
+}
+
+void sdb::process::write_gprs(const user_regs_struct& gprs) {
+    if (ptrace(PTRACE_SETREGS, pid_, nullptr, &gprs) < 0) {
+        error::send_errno("Could not set general purpose registers");
     }
 }

@@ -5,6 +5,7 @@
 #ifndef SDB_PROCES_HPP
 #define SDB_PROCES_HPP
 
+#include <optional>
 #include <filesystem>
 #include <memory>
 #include <sys/types.h>
@@ -50,9 +51,13 @@ namespace sdb {
          * creates a process.
          *
          * @param path path to the binary to create a process.
+         * @param debug used to indicate if we want to debug the process or not.
+         * @param stdout_replacement file descriptor to replace the stdout.
          * @return unique pointer to the created process.
          */
-        static std::unique_ptr<process> launch(std::filesystem::path path, bool debug = true);
+        static std::unique_ptr<process> launch(std::filesystem::path path,
+            bool debug = true,
+            std::optional<int> stdout_replacement = std::nullopt);
 
         /**
          * Attach constructor that given a pid, it attaches

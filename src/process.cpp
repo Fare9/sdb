@@ -42,7 +42,9 @@ sdb::stop_reason::stop_reason(int wait_status) {
     }
 }
 
-std::unique_ptr<sdb::process> sdb::process::launch(std::filesystem::path path, bool debug) {
+std::unique_ptr<sdb::process> sdb::process::launch(std::filesystem::path path,
+                                                   bool debug,
+                                                   std::optional<int> stdout_replacement) {
     pid_t pid;
     // create a pipe for being able to communicate with the
     // created process. This pipe will be cloned into child
@@ -54,6 +56,14 @@ std::unique_ptr<sdb::process> sdb::process::launch(std::filesystem::path path, b
     }
 
     if (pid == 0) {
+        channel.close_read();
+
+        if (stdout_replacement.has_value()) {
+            if (dup2(stdout_replacement.value(), STDOUT_FILENO) < 0) {
+                exit_with_perror(channel, "stdout replacement failed");
+            }
+        }
+
         // We need to request TRACEME, so we wait
         // for the debugger
         if (debug and ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) {
@@ -164,9 +174,9 @@ void sdb::process::read_all_registers() {
     // Getting the debug registers, we need to retrieve them reading memory
     for (int i = 0; i < 8; ++i) {
         // get id from dr0, dr1, ... using dr0 as base
-        auto id= static_cast<int>(register_id::dr0) + i;
+        auto id = static_cast<int>(register_id::dr0) + i;
         // retrieve the info structure
-        const auto & info = register_info_by_id(static_cast<register_id>(id));
+        const auto &info = register_info_by_id(static_cast<register_id>(id));
 
         // we read the 64 bit value from the offset of the register
         errno = 0;
@@ -184,13 +194,13 @@ void sdb::process::write_user_area(std::size_t offset, std::uint64_t data) const
     }
 }
 
-void sdb::process::write_fprs(const user_fpregs_struct& fprs) {
+void sdb::process::write_fprs(const user_fpregs_struct &fprs) {
     if (ptrace(PTRACE_SETFPREGS, pid_, nullptr, &fprs) < 0) {
         error::send_errno("Could not set floating-point registers");
     }
 }
 
-void sdb::process::write_gprs(const user_regs_struct& gprs) {
+void sdb::process::write_gprs(const user_regs_struct &gprs) {
     if (ptrace(PTRACE_SETREGS, pid_, nullptr, &gprs) < 0) {
         error::send_errno("Could not set general purpose registers");
     }

@@ -119,6 +119,6 @@ void sdb::registers::write(const register_info &info, value val) {
     // into the superregister (ah, bh, ch, dh). We can align the address through an
     // AND bitwise with the NOT of 0b111, setting the last three
     auto aligned_offset = info.offset & ~0b111;
-    proc_->write_user_area(info.offset,
+    proc_->write_user_area(aligned_offset,
                            from_bytes<std::uint64_t>(bytes + aligned_offset));
 }

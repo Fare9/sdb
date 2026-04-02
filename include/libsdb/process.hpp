@@ -56,8 +56,8 @@ namespace sdb {
          * @return unique pointer to the created process.
          */
         static std::unique_ptr<process> launch(std::filesystem::path path,
-            bool debug = true,
-            std::optional<int> stdout_replacement = std::nullopt);
+                                               bool debug = true,
+                                               std::optional<int> stdout_replacement = std::nullopt);
 
         /**
          * Attach constructor that given a pid, it attaches
@@ -67,16 +67,20 @@ namespace sdb {
          * @return unique pointer to the created process.
          */
         static std::unique_ptr<process> attach(pid_t pid);
+
         // Deleted constructors and copy constructors
         // in this way the user cannot create its own processes
         process() = delete;
-        process(const process&) = delete;
-        process& operator=(const process&) = delete;
+
+        process(const process &) = delete;
+
+        process &operator=(const process &) = delete;
 
         // Destructor of the process to free any acquired resource
         ~process();
 
         void resume();
+
         stop_reason wait_on_signal();
 
         /**
@@ -91,19 +95,30 @@ namespace sdb {
             return state_;
         }
 
-        registers& get_registers() {
+        registers &get_registers() {
             return *registers_;
         }
 
-        [[nodiscard]] const registers& get_registers() const {
+        [[nodiscard]] const registers &get_registers() const {
             return *registers_;
+        }
+
+        /**
+         * Obtain the program counter register value, and return it
+         * as a virtual address
+         * @return virt_addr with the value of the program counter.
+         */
+        [[nodiscard]] virt_addr get_pc() const {
+            return virt_addr{
+                get_registers().read_by_id_as<std::uint64_t>(register_id::rip)
+            };
         }
 
         void write_user_area(std::size_t offset, std::uint64_t data) const;
 
-        void write_fprs(const user_fpregs_struct& fprs);
+        void write_fprs(const user_fpregs_struct &fprs);
 
-        void write_gprs(const user_regs_struct& fprs);
+        void write_gprs(const user_regs_struct &fprs);
 
     private:
         /**
@@ -112,10 +127,10 @@ namespace sdb {
          * @param pid process pid.
          * @param terminate_on_end way of terminating the process.
          */
-        process(pid_t pid, bool terminate_on_end, bool is_attached) :
-            pid_(pid), terminate_on_end_(terminate_on_end), is_attached_(is_attached),
-            registers_(new registers(*this))
-        {}
+        process(pid_t pid, bool terminate_on_end, bool is_attached) : pid_(pid), terminate_on_end_(terminate_on_end),
+                                                                      is_attached_(is_attached),
+                                                                      registers_(new registers(*this)) {
+        }
 
         void read_all_registers();
 
@@ -124,7 +139,6 @@ namespace sdb {
         process_state state_ = process_state::stopped;
         bool is_attached_ = true;
         std::unique_ptr<registers> registers_;
-
     };
 }
 

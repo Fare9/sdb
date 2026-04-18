@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/personality.h>
 
 namespace {
     /**
@@ -56,6 +57,13 @@ std::unique_ptr<sdb::process> sdb::process::launch(std::filesystem::path path,
     }
 
     if (pid == 0) {
+
+        // We need this call now to create the new process and avoid
+        // the randomization of the base address for a process. We need
+        // this because we are not obtaining the base address of the
+        // process yet
+        personality(ADDR_NO_RANDOMIZE);
+
         channel.close_read();
 
         if (stdout_replacement.has_value()) {
@@ -113,6 +121,24 @@ std::unique_ptr<sdb::process> sdb::process::attach(pid_t pid) {
 }
 
 void sdb::process::resume() {
+    auto pc = get_pc();
+    if (breakpoint_sites_.enabled_stoppoint_at_address(pc)) {
+        auto& bp = breakpoint_sites_.get_by_address(pc);
+        // Remove the breakpoint for a moment
+        bp.disable();
+        // Single step so we can enable the breakpoint again
+        if (ptrace(PTRACE_SINGLESTEP, pid_, nullptr, nullptr) < 0) {
+            error::send_errno("Failed to single step");
+        }
+        int wait_status;
+        if (waitpid(pid_, &wait_status, 0) < 0) {
+            error::send_errno("waitpid failed");
+        }
+        // enable it and write 0xCC again
+        bp.enable();
+    }
+
+
     if (ptrace(PTRACE_CONT, pid_, nullptr, nullptr) < 0) {
         error::send_errno("Could not resume");
     }
@@ -132,6 +158,13 @@ sdb::stop_reason sdb::process::wait_on_signal() {
     // and read the registers
     if (is_attached_ and state_ == process_state::stopped) {
         read_all_registers();
+        auto instr_begin = get_pc() - 1;
+        // Check if we just hit a breakpoint
+        if (reason.info == SIGTRAP and
+            breakpoint_sites_.enabled_stoppoint_at_address(instr_begin)) {
+            set_pc(instr_begin);
+        }
+
     }
 
 
@@ -188,6 +221,28 @@ void sdb::process::read_all_registers() {
     }
 }
 
+sdb::stop_reason sdb::process::step_instruction() {
+    std::optional<breakpoint_site*> to_reenable;
+    auto pc = get_pc();
+    // If we are going to single step over a breakpoint
+    // we need to disable to avoid obtaining a SIGILL
+    if (breakpoint_sites_.enabled_stoppoint_at_address(pc)) {
+        auto& bp = breakpoint_sites_.get_by_address(pc);
+        bp.disable();
+        to_reenable = &bp;
+    }
+
+    if (ptrace(PTRACE_SINGLESTEP, pid_, nullptr, nullptr) < 0) {
+        error::send_errno("Could not single step");
+    }
+    auto reason = wait_on_signal();
+
+    if (to_reenable) {
+        to_reenable.value()->enable();
+    }
+    return reason;
+}
+
 void sdb::process::write_user_area(std::size_t offset, std::uint64_t data) const {
     if (ptrace(PTRACE_POKEUSER, pid_, offset, data) < 0) {
         error::send_errno("Could not write to user area");
@@ -204,4 +259,15 @@ void sdb::process::write_gprs(const user_regs_struct &gprs) {
     if (ptrace(PTRACE_SETREGS, pid_, nullptr, &gprs) < 0) {
         error::send_errno("Could not set general purpose registers");
     }
+}
+
+sdb::breakpoint_site&
+    sdb::process::create_breakpoint_site(virt_addr address) {
+    if (breakpoint_sites_.contains_address(address)) {
+        error::send("Breakpoint site already created at address "
+            + std::to_string(address.addr()));
+    }
+
+    return breakpoint_sites_.push(
+        std::unique_ptr<breakpoint_site>(new breakpoint_site(*this, address)));
 }

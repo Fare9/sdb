@@ -10,8 +10,11 @@
 #include <memory>
 #include <sys/types.h>
 #include <cstdint>
+#include <vector>
 
 #include <libsdb/registers.hpp>
+#include <libsdb/breakpoint_site.hpp>
+#include <libsdb/stoppoint_collection.hpp>
 
 namespace sdb {
     /**
@@ -114,11 +117,25 @@ namespace sdb {
             };
         }
 
+        void set_pc(virt_addr address) {
+            get_registers().write_by_id(register_id::rip, address.addr());
+        }
+
+        stop_reason step_instruction();
+
         void write_user_area(std::size_t offset, std::uint64_t data) const;
 
         void write_fprs(const user_fpregs_struct &fprs);
 
         void write_gprs(const user_regs_struct &fprs);
+
+        breakpoint_site& create_breakpoint_site(virt_addr address);
+
+        stoppoint_collection<breakpoint_site>&
+            breakpoint_sites() { return breakpoint_sites_; }
+
+        [[nodiscard]] const stoppoint_collection<breakpoint_site>&
+            breakpoint_sites() const { return breakpoint_sites_; }
 
     private:
         /**
@@ -139,6 +156,8 @@ namespace sdb {
         process_state state_ = process_state::stopped;
         bool is_attached_ = true;
         std::unique_ptr<registers> registers_;
+        // container for the software breakpoints
+        stoppoint_collection<breakpoint_site> breakpoint_sites_;
     };
 }
 

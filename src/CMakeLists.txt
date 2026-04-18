@@ -2,7 +2,8 @@
 add_library(libsdb
         process.cpp
         pipe.cpp
-        registers.cpp)
+        registers.cpp
+        breakpoint_site.cpp)
 # assign an ALIAS with a namespace
 add_library(sdb::libsdb ALIAS libsdb)
 
